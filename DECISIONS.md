@@ -61,3 +61,32 @@ This log documents major architectural and design decisions for the Support & Op
 * **Decision:** Enable LangSmith tracing natively via standard environment flags (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_PROJECT`) without custom wrapper code.
 * **Alternatives Considered:** Custom logging middleware or manual OpenTelemetry spans on every node.
 * **Why:** LangGraph and LangChain natively instrument every graph transition, state diff, LLM latency, and token count when environment variables are set. Relying on the official tracer ensures 100% telemetry fidelity with zero invasive boilerplate.
+
+---
+
+## Milestone 4, Milestone 5 & Milestone 6: Human Approval, Guardrails, and Eval Suite
+
+### ADR 11: Human-in-the-Loop via Native `interrupt()` and `Command(resume=...)`
+* **Decision:** Implement approval gates inside `approval_gate_node` using LangGraph v0.2+ `interrupt()`, resumed via `Command(resume=payload)`.
+* **Alternatives Considered:** Custom database polling loops or external message queues (Celery/RabbitMQ).
+* **Why:** `interrupt()` is LangGraph's first-class primitive for pausing execution graphs. It serializes the exact execution frame to the configured checkpointer, yields control to external clients, and cleanly resumes upon receiving `Command(resume=...)`. This eliminates brittle polling workers and custom state-machine orchestrators.
+
+### ADR 12: Durable Checkpoint Durability across Process Restarts
+* **Decision:** Checkpoint state via `AsyncPostgresSaver` (and `AsyncSqliteSaver` in test environments) with an automated test proving a paused run survives a simulated server shutdown.
+* **Alternatives Considered:** Memory-only checkpointing or Redis caching.
+* **Why:** Support tickets requiring supervisor approval can sit idle for minutes, hours, or overnight. In production Kubernetes/Docker environments, containers restart frequently during deployments. In-memory state would lose all waiting approvals; database-backed checkpointing guarantees zero lost state across container lifecycle events.
+
+### ADR 13: Hard Code-Enforced Preconditions in `execute_action`
+* **Decision:** `execute_action_node` checks `approval_status == 'approved'` in Python code before calling write tools, refusing execution if unapproved.
+* **Alternatives Considered:** Relying on graph routing edges alone to prevent unauthorized execution.
+* **Why:** Defense-in-depth. If an adversarial prompt injection or a developer edge-routing bug accidentally directs execution to `execute_action`, the node itself acts as a zero-trust barrier and halts execution.
+
+### ADR 14: Defense-in-Depth Guardrails
+* **Decision:** Enforce `MAX_STEPS = 10`, loop detection, token cost estimation, and input regex/delimiter sanitization in `app/agent/guardrails.py`.
+* **Alternatives Considered:** Third-party guardrail frameworks (NeMo Guardrails, Guardrails AI).
+* **Why:** Third-party guardrail frameworks add heavy dependencies and latency. A compact, explicit module covering control character stripping, injection delimiter detection, step limits, and cost caps provides immediate protection without black-box complexity.
+
+### ADR 15: Quantitative Evaluation Architecture with Hard Invariants
+* **Decision:** Implement `evals/run.py` over 50 real-world customer tickets measuring Routing Accuracy, Tool-Call Correctness, Approval-Gate Correctness, Policy Compliance, Steps, Latency, and Cost.
+* **Alternatives Considered:** Unstructured manual spot-checking or subjective qualitative prompt grading.
+* **Why:** Engineering jobs require verifiable metrics. Treating "Approval-Gate Correctness" as an absolute invariant (100% required, 0% write actions allowed without human approval) proves the system meets enterprise financial compliance standards.

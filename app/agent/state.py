@@ -39,5 +39,8 @@ class AgentState(TypedDict, total=False):
     # Approval gate status: "pending" | "approved" | "rejected" | "edited"
     approval_status: Optional[str]
 
+    # Result of executed write tool (refund or cancellation)
+    action_result: Optional[dict[str, Any]]
+
     # Guardrail: execution step counter
     step_count: int

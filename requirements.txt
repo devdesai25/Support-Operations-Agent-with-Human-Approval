@@ -17,3 +17,6 @@ langchain-openai>=0.2.0
 langchain-anthropic>=0.2.0
 langsmith>=0.1.125
 pgvector>=0.3.0
+langgraph-checkpoint-postgres>=3.0.0
+langgraph-checkpoint-sqlite>=3.0.0
+psycopg[binary]>=3.2.0

@@ -49,9 +49,18 @@ def generate_deterministic_reply(intent: str, order_context: dict[str, Any]) -> 
         )
 
     if intent in ("refund_request", "cancellation"):
+        action_res = order_context.get("refund") or order_context
+        if action_res.get("success") or "refund" in order_context or order_context.get("status") == "CANCELLED":
+            if intent == "refund_request":
+                amt = order_context.get("refund", {}).get("amount", "")
+                return f"Good news! Your refund request has been approved and processed ({f'Amount: ${amt}' if amt else 'Processed'}). Funds will reflect in 3-5 business days."
+            return "Your order has been successfully cancelled per your approved request."
+        elif order_context.get("error"):
+            return f"Your request could not be processed: {order_context['error']}"
+
         return (
             f"I have received your request regarding **{intent.replace('_', ' ')}**. "
-            "Financial and cancellation operations require human approval and verification."
+            "A proposal has been prepared and is pending supervisor approval."
         )
 
     return "Thank you for reaching out. Let me know if you need any additional help!"

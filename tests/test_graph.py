@@ -78,7 +78,7 @@ async def test_graph_end_to_end_order_inquiry(db_session: AsyncSession):
 
     final_state = await agent_graph.ainvoke(
         initial_state,
-        config={"configurable": {"session": db_session}},
+        config={"configurable": {"session": db_session, "thread_id": f"thread-order-{uuid.uuid4().hex[:6]}"}},
     )
 
     assert final_state["intent"] == "order_status"
@@ -101,7 +101,7 @@ async def test_graph_end_to_end_policy_inquiry(db_session: AsyncSession):
 
     final_state = await agent_graph.ainvoke(
         initial_state,
-        config={"configurable": {"session": db_session}},
+        config={"configurable": {"session": db_session, "thread_id": f"thread-order-{uuid.uuid4().hex[:6]}"}},
     )
 
     assert final_state["intent"] == "policy_question"
@@ -120,7 +120,10 @@ async def test_graph_end_to_end_escalation():
         "step_count": 0,
     }
 
-    final_state = await agent_graph.ainvoke(initial_state)
+    final_state = await agent_graph.ainvoke(
+        initial_state,
+        config={"configurable": {"thread_id": "test_escalate_thread"}},
+    )
 
     assert final_state["intent"] == "escalate"
     ai_reply = final_state["messages"][-1].content

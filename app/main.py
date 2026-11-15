@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import approvals, conversations
 from app.config import settings
 from app.database import init_db
 
@@ -15,7 +16,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version="0.2.0",
     description="Customer Support & Operations AI Agent with Human-in-the-Loop Approval",
     lifespan=lifespan,
 )
@@ -28,6 +29,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount API Routers
+app.include_router(conversations.router)
+app.include_router(approvals.router)
 
 
 @app.get("/health", tags=["Health"])
