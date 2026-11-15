@@ -36,6 +36,9 @@ htmlcov/
 *.db
 *.sqlite3
 
+# Private Student Interview Guide (Do not push to GitHub)
+SYSTEM_EXPLAINER_FOR_INTERVIEWS.md
+
 # IDEs
 .idea/
 .vscode/
