@@ -11,6 +11,26 @@ UUID_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+TYPO_MAPPINGS = {
+    r"\bordr\b": "order",
+    r"\brefnd\b": "refund",
+    r"\bcancl\b": "cancel",
+    r"\bcancle\b": "cancel",
+    r"\bshippin\b": "shipping",
+    r"\bretrn\b": "return",
+    r"\bretun\b": "return",
+    r"\bhooman\b": "human",
+    r"\bhumon\b": "human",
+    r"\bwher\b": "where",
+    r"\bwut\b": "what",
+    r"\bwat\b": "what",
+    r"\bda\b": "the",
+    r"\bpleas\b": "please",
+    r"\bsneekr\b": "sneaker",
+    r"\bsneekers\b": "sneakers",
+    r"\bpostion\b": "position",
+}
+
 
 class IntentClassification(BaseModel):
     intent: Literal[
@@ -29,31 +49,50 @@ class IntentClassification(BaseModel):
     reasoning: str = Field(..., description="Brief reasoning for classification.")
 
 
+def normalize_text(text: str) -> str:
+    """Normalize colloquial typos and slang."""
+    lowered = text.lower()
+    for pattern, replacement in TYPO_MAPPINGS.items():
+        lowered = re.sub(pattern, replacement, lowered)
+    return lowered
+
+
 def heuristic_classify(user_text: str) -> IntentClassification:
-    """Deterministic classifier used for fast tests, offline CI, or LLM fallback."""
-    text = user_text.lower()
+    """Deterministic classifier with typo-normalization and priority ordering."""
+    text = normalize_text(user_text)
     found_uuids = UUID_REGEX.findall(user_text)
     first_uuid = found_uuids[0] if found_uuids else None
 
-    # 1. Escalation
-    if any(k in text for k in ["human", "representative", "agent", "supervisor", "support person", "lawyer", "sue"]):
+    # Check if this is an exploratory/policy question about refunds, cancellations, drops, etc.
+    is_question = any(text.startswith(q) for q in ["how", "can i", "is ", "are ", "what ", "why "]) or "return policy" in text or "how long" in text or "what happens" in text
+
+    # 1. Escalation (Explicit request for human or legal threats)
+    if any(k in text for k in [
+        "speak to a human", "speak to a representative", "speak to a supervisor", "speak to a person",
+        "talk to a human", "talk to a representative", "talk to a supervisor", "talk to a person",
+        "speek to hooman", "speak to hooman", "demand to speak", "call my lawyer", "sue", "lawyer",
+        "let me talk to a person", "let me speak to a representative",
+    ]):
         return IntentClassification(
             intent="escalate",
             confidence=0.95,
-            reasoning="Customer requested human intervention or sensitive escalation.",
+            reasoning="Customer explicitly demanded human supervisor or legal escalation.",
         )
 
-    # 2. Refund request
-    if any(k in text for k in ["refund", "money back", "reimburse", "return payment"]):
+    # 2. Informational / Policy Questions (Even if mentioning refund/cancel/drops)
+    if is_question and any(k in text for k in [
+        "policy", "return", "refund", "cancel", "exchange", "window", "shipping",
+        "waitlist", "raffle", "drop", "bot", "promo", "discount", "fee", "signature", "hours",
+    ]) and not any(k in text for k in ["did i win", "where is my order"]):
         return IntentClassification(
-            intent="refund_request",
-            confidence=0.95,
-            order_id=first_uuid,
-            reasoning="Customer is inquiring about or requesting a refund.",
+            intent="policy_question",
+            confidence=0.92,
+            policy_query=user_text,
+            reasoning="Customer asked an informational policy question.",
         )
 
-    # 3. Cancellation
-    if any(k in text for k in ["cancel my order", "cancel order", "cancellation"]):
+    # 3. Direct Cancellation commands
+    if any(k in text for k in ["cancel my order", "cancel order", "cancellation", "pleas cancel"]):
         return IntentClassification(
             intent="cancellation",
             confidence=0.95,
@@ -61,8 +100,22 @@ def heuristic_classify(user_text: str) -> IntentClassification:
             reasoning="Customer requested order cancellation.",
         )
 
-    # 4. Drop status
-    if any(k in text for k in ["drop", "raffle", "waitlist", "draw", "entry status"]):
+    # 4. Direct Refund commands
+    if any(k in text for k in [
+        "refund", "money back", "reimburse", "return payment",
+        "give me my money", "chargeback",
+    ]):
+        return IntentClassification(
+            intent="refund_request",
+            confidence=0.95,
+            order_id=first_uuid,
+            reasoning="Customer is initiating a refund.",
+        )
+
+    # 5. Drop / Raffle Status
+    if any(k in text for k in [
+        "did i win", "raffle drop", "drop raffle", "drop entry", "waitlist position", "drop",
+    ]) and not any(k in text for k in ["drop table"]):
         return IntentClassification(
             intent="drop_status",
             confidence=0.90,
@@ -70,11 +123,11 @@ def heuristic_classify(user_text: str) -> IntentClassification:
             reasoning="Customer is checking drop or raffle entry status.",
         )
 
-    # 5. Policy question
+    # 6. Policy Questions (Catchall for rules/restocking/fees)
     if any(k in text for k in [
-        "policy", "return", "returns", "exchange", "window", "shipping time",
-        "defective", "damaged", "promo", "discount", "code", "coupon",
-        "rules", "fee", "fees", "how many days", "how long",
+        "policy", "return", "exchange", "window", "shipping", "shippin",
+        "delivery", "defective", "damaged", "promo", "discount", "code",
+        "coupon", "rules", "fee", "fees", "restocking", "signature", "international", "bot",
     ]):
         return IntentClassification(
             intent="policy_question",
@@ -83,8 +136,10 @@ def heuristic_classify(user_text: str) -> IntentClassification:
             reasoning="Customer asked a policy, rules, or procedural question.",
         )
 
-    # 6. Order status
-    if any(k in text for k in ["order", "package", "tracking", "status", "where is", "delivery", "delivered"]):
+    # 7. Order Status / Tracking
+    if any(k in text for k in [
+        "order", "package", "tracking", "status", "where is", "track", "delivery", "delivered", "waiting",
+    ]):
         return IntentClassification(
             intent="order_status",
             confidence=0.90,

@@ -42,9 +42,10 @@ def generate_deterministic_reply(intent: str, order_context: dict[str, Any]) -> 
             return "I could not find a specific policy matching your query. Please contact support for more details."
         top = results[0]
         sources = ", ".join(dict.fromkeys(r["source"] for r in results))
+        all_content = "\n\n".join(r["content"] for r in results[:2])
         return (
             f"**{top['title']}**\n\n"
-            f"{top['content']}\n\n"
+            f"{all_content}\n\n"
             f"*Source: {sources}*"
         )
 
