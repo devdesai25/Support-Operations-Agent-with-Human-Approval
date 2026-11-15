@@ -32,3 +32,32 @@ This log documents major architectural and design decisions for the Support & Op
 * **Decision:** Every read and write tool execution records input arguments, outputs, execution time, and status (`SUCCESS`, `BLOCKED`, `ERROR`) to an `agent_actions` audit table.
 * **Alternatives Considered:** Application log files (stdout/syslog) or relying solely on LangSmith tracing.
 * **Why:** Financial operations and account mutations require durable, auditable, SQL-queryable compliance records. If an LLM misbehaves or an unauthorized access attempt is triggered, the audit table provides immediate non-repudiation and telemetry independent of third-party SaaS availability.
+
+---
+
+## Milestone 2 & Milestone 3: LangGraph Agent Core, Policy RAG & LangSmith Tracing
+
+### ADR 6: Structured Output Intent Classification with Resilient Heuristic Fallback
+* **Decision:** Implement `classify_intent` with Pydantic structured output (`model.with_structured_output(IntentClassification)`) alongside a deterministic keyword/regex heuristic classifier.
+* **Alternatives Considered:** Open-ended conversational prompt routing, or multiple independent routing agents.
+* **Why:** Structured output guarantees type safety and schema validation for downstream conditional edges (`route_intent`). Providing a deterministic fallback enables ultra-fast, zero-cost, network-independent unit tests and CI runs while giving production instances graceful degradation if model APIs experience outages.
+
+### ADR 7: Single Consolidated Read-Only Node over Multiple Specialist Agents
+* **Decision:** Use a single `read_tools` node responsible for executing read lookups (`get_order`, `list_user_orders`, `get_drop_entry_status`, `search_policies`) based on state.
+* **Alternatives Considered:** Spawning separate subagents or separate nodes for each individual tool.
+* **Why:** Rule 5 ("Simple and correct over clever"). Creating separate subagents or 4 discrete nodes for read-only lookups causes unnecessary state graph complexity, higher execution latency, and additional serialization overhead without any operational benefit. A single node with deterministic dispatch is easy to debug, test, and defend.
+
+### ADR 8: Policy RAG with Mandatory Source Attribution
+* **Decision:** Implement `search_policies` to chunk operational markdown policies, compute normalized vector embeddings, calculate cosine similarities, and return source filenames with every result.
+* **Alternatives Considered:** Inlining policy text into system prompts.
+* **Why:** Inlining policies in system prompts balloons context window tokens, increases per-query latency and API costs, and increases hallucination risks. RAG retrieves only the top relevant chunks on-demand. Returning source attribution (`return_policy.md`, etc.) allows the agent and customer to verify the authoritative basis for operational answers.
+
+### ADR 9: Session Dependency Injection via `RunnableConfig`
+* **Decision:** Pass database sessions into node executions using LangGraph's standard `config["configurable"]["session"]`, falling back to `async_session_factory()`.
+* **Alternatives Considered:** Global session variables or recreating connection pools per node.
+* **Why:** Follows official LangGraph runtime configuration standards. It decouples graph nodes from specific database instances, allowing test suites to inject isolated in-memory SQLite transactions while allowing FastAPI request lifecycles to inject transactional PostgreSQL sessions cleanly.
+
+### ADR 10: Zero-Overhead LangSmith Tracing Integration
+* **Decision:** Enable LangSmith tracing natively via standard environment flags (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_PROJECT`) without custom wrapper code.
+* **Alternatives Considered:** Custom logging middleware or manual OpenTelemetry spans on every node.
+* **Why:** LangGraph and LangChain natively instrument every graph transition, state diff, LLM latency, and token count when environment variables are set. Relying on the official tracer ensures 100% telemetry fidelity with zero invasive boilerplate.
